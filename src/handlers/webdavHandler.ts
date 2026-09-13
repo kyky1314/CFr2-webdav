@@ -1,5 +1,5 @@
 // 文件名：src/handlers/webdavHandler.ts
-import { listAll, fromR2Object, make_resource_path, generatePropfindResponse } from '../utils/webdavUtils';
+import { listDirectory, listAll, fromR2Object, make_resource_path, generatePropfindResponse } from '../utils/webdavUtils';
 import { logger } from '../utils/logger';
 import { generateHTML, generateErrorHTML } from '../utils/templates';
 import { WebDAVProps, Env } from '../types';
@@ -98,18 +98,15 @@ async function handleGet(request: Request, bucket: R2Bucket, bucketName: string)
 
 async function handleDirectory(bucket: R2Bucket, resource_path: string, bucketName: string): Promise<Response> {
   let items = [];
-
-  if (resource_path !== "") {
+  if (resource_path !== "" && resource_path !== "/") {
     items.push({ name: "📁 ..", href: "../" });
   }
-
   try {
-    for await (const object of listAll(bucket, resource_path)) {
-      if (object.key === resource_path) continue;
-      const isDirectory = object.customMetadata?.resourcetype === "collection";
-      const displayName = object.key.split('/').pop() || object.key;
-      const href = `/${object.key}${isDirectory ? "/" : ""}`;
-      items.push({ name: `${isDirectory ? '📁 ' : '📄 '}${displayName}`, href });
+    const listed = await listDirectory(bucket, resource_path);
+    for (const item of listed) {
+      const href = `/${item.key}`;
+      const icon = item.isDirectory ? '📁 ' : '📄 ';
+      items.push({ name: `${icon}${item.name}`, href });
     }
   } catch (error) { 
     const err = error as Error;
@@ -120,7 +117,7 @@ async function handleDirectory(bucket: R2Bucket, resource_path: string, bucketNa
     });
   }
 
-  const page = generateHTML("WebDAV File Browser", items);
+  const page = generateHTML(`WebDAV - /${resource_path}`, items);
   return new Response(page, {
     status: 200,
     headers: { "Content-Type": "text/html; charset=utf-8" }
